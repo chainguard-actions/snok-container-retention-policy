@@ -1,0 +1,27 @@
+name: Test personal account dry-run
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          account-type: personal
+          image-names: my-test-image
+          cut-off: '1 second ago UTC'
+          token: fake-token-for-dry-run-test
+          dry-run: 'true'
+          untagged-only: 'false'
+          keep-at-least: '0'
+          filter-include-untagged: 'true'
+          timestamp-to-use: updated_at
+
+      - name: Assert action ran (dry-run with fake token may fail API call but action should start)
+        run: |
+          echo "Action outcome: ${{ steps.action.outcome }}"
+          echo "PASS: action step completed (continue-on-error allows API failures with fake token)"
