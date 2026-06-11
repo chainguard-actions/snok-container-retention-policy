@@ -1,8 +1,10 @@
+<!-- markdownlint-disable -->
+
 # Hardening Report: snok--container-retention-policy/v2.2.1
 
 > This file was generated automatically by the hardening agent.
 
-**Policy SHA:** `ff50f15e4b79bfbf764dafdfd2579175a6ea9771`
+**Policy SHA:** `d636be7e43ef829af6e853da6b3c7566db9f72fe`
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
@@ -12,21 +14,21 @@ Action **snok--container-retention-policy/v2.2.1** was hardened automatically. 2
 
 ## Findings Fixed
 
+### script-injection (severity: high)
+
+Rule (a) violation: The 'Run Container Retention Policy' step in action.yml directly interpolates `${{ github.action_path }}` inside a `run:` shell command string: `python ${{ github.action_path }}/main.py`. Any `${{ ... }}` expression inside a `run:` block is a script-injection risk because the expression is substituted by the Actions template engine before the shell ever sees the string, allowing the value to break out of the intended command structure.
+
+Locations:
+
+- `action.yml:68`
+
 ### unpinned-uses (severity: high)
 
-action.yml uses `actions/setup-python@v4`, which is a mutable tag reference rather than a pinned 40-character commit SHA. This means the action could silently change if the tag is moved, enabling supply-chain attacks.
+The composite action uses `actions/setup-python@v4`, which is pinned to a mutable version tag (`@v4`) rather than an immutable 40-character commit SHA. A tag can be moved to point to a different (potentially malicious) commit at any time, making this a supply-chain risk. It should be replaced with a full SHA pin, e.g. `actions/setup-python@<40-char-sha> # v4`.
 
 Locations:
 
 - `action.yml:63`
-
-### script-injection (severity: high)
-
-The 'Run Container Retention Policy' step in action.yml directly interpolates `${{ github.action_path }}` inside the `run:` shell command string (`python ${{ github.action_path }}/main.py ...`). GitHub Actions expressions must be assigned to an environment variable first and then referenced as `$ENV_VAR` in the shell command, rather than being interpolated directly into the run block.
-
-Locations:
-
-- `action.yml:70`
 
 ## Iteration Notes
 
@@ -36,5 +38,5 @@ Locations:
 
 **Notes:**
 
-1. Pinned `actions/setup-python@v4` to its full commit SHA `7f4fc3e22c37d6ff65e88745f38bd3157c663f7c` with the tag preserved as a comment. 2. Moved `${{ github.action_path }}` from the `run:` shell string into the step's `env:` block as `ACTION_PATH`, and updated the shell command to reference `"$ACTION_PATH/main.py"` instead.
+1. Pinned actions/setup-python from mutable tag @v4 to immutable SHA @7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4. 2. Fixed script-injection in the 'Run Container Retention Policy' step: moved ${{ github.action_path }} out of the run: shell string into the env: block as ACTION_PATH, then referenced it as "$ACTION_PATH/main.py" in the shell script.
 

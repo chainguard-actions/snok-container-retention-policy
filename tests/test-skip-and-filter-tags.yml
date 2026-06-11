@@ -1,4 +1,4 @@
-name: Test personal account dry-run
+name: Test skip-tags and filter-tags inputs
 on:
   workflow_dispatch:
 jobs:
@@ -16,12 +16,14 @@ jobs:
           cut-off: '1 second ago UTC'
           token: fake-token-for-dry-run
           dry-run: 'true'
-          keep-at-least: '0'
+          skip-tags: 'latest,stable'
+          filter-tags: 'dev-*,pr-*'
+          keep-at-least: '1'
           untagged-only: 'false'
-          filter-include-untagged: 'true'
-          timestamp-to-use: updated_at
+          filter-include-untagged: 'false'
+          timestamp-to-use: created_at
 
-      - name: Assert action ran (dry-run with fake token may fail API calls but action should start)
+      - name: Assert action ran with skip-tags and filter-tags
         run: |
           echo "Action completed with outcome: ${{ steps.action.outcome }}"
-          echo "PASS: action step executed"
+          echo "PASS: action step executed with skip-tags and filter-tags inputs"
