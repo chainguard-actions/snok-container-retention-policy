@@ -1,0 +1,131 @@
+name: Test action main branch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "5 * * * *"  # every hour
+
+permissions: {}
+
+jobs:
+  clean-v300:
+    runs-on: ubuntu-latest
+    name: Delete test-1-* images with v3.0.0 (PAT)
+    steps:
+      - uses: snok/container-retention-policy@4f22ef80902ad409ed55a99dc5133cc1250a0d03 # v3.0.0
+        with:
+          account: snok
+          token: ${{ secrets.PAT }}
+          cut-off: 30m
+          image-names: container-retention-policy
+          image-tags: test-1*
+          tag-selection: tagged
+          timestamp-to-use: created_at
+          dry-run: false
+          rust-log: container_retention_policy=debug
+
+  clean-v301:
+    runs-on: ubuntu-latest
+    name: Delete test-2-* images with v3.0.1 (PAT)
+    steps:
+      - uses: snok/container-retention-policy@3b0972b2276b171b212f8c4efbca59ebba26eceb # v3.0.1
+        with:
+          account: snok
+          token: ${{ secrets.PAT }}
+          cut-off: 30m
+          image-names: container-retention-policy
+          image-tags: test-2*
+          tag-selection: tagged
+          timestamp-to-use: created_at
+          dry-run: false
+          rust-log: container_retention_policy=debug
+
+  clean-main:
+    runs-on: ubuntu-latest
+    name: Delete test-3-* images with main branch (temporal token)
+    steps:
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Build main branch binary
+        run: cargo build --release
+      - name: Delete test-3-* images
+        env:
+          RUST_LOG: container_retention_policy=debug
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./target/release/container-retention-policy \
+            --account=snok \
+            --token="$GITHUB_TOKEN" \
+            --cut-off=30m \
+            --image-names=container-retention-policy \
+            --shas-to-skip="" \
+            --image-tags="test-3*" \
+            --tag-selection=tagged \
+            --timestamp-to-use=created_at \
+            --dry-run=false
+
+  clean-action-main:
+    runs-on: ubuntu-latest
+    name: Delete test-4-* images with @main action (temporal token)
+    steps:
+      - uses: snok/container-retention-policy@54bd23d1082d6c3b772bba433c5cfa34c5298445 # main
+        with:
+          account: snok
+          token: ${{ secrets.GITHUB_TOKEN }}
+          cut-off: 30m
+          image-names: container-retention-policy
+          image-tags: test-4*
+          tag-selection: both
+          timestamp-to-use: created_at
+          dry-run: false
+          rust-log: container_retention_policy=debug
+
+  produce:
+    needs: [clean-v300, clean-v301, clean-main, clean-action-main]
+    runs-on: ubuntu-latest
+    name: Upload test images
+    steps:
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push test images
+        run: |
+          for prefix in test-1 test-2 test-3 test-4; do
+            randomString=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 10 2>/dev/null || echo RANDOM)
+            {
+              echo "FROM alpine AS builder"
+              echo "RUN echo \"${prefix}-${randomString}\" > test.txt"
+              echo "FROM scratch"
+              echo "COPY --from=builder /test.txt ."
+            } > Dockerfile
+
+            docker build -f Dockerfile -t "ghcr.io/snok/container-retention-policy:${prefix}" --push .
+
+            for ((j=1; j<=3; j++)); do
+              docker tag "ghcr.io/snok/container-retention-policy:${prefix}" "ghcr.io/snok/container-retention-policy:${prefix}-${j}"
+              docker push "ghcr.io/snok/container-retention-policy:${prefix}-${j}"
+            done
+          done
+      - name: Build and push multi-arch test image
+        run: |
+          randomString=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 10 2>/dev/null || echo RANDOM)
+          {
+            echo "FROM alpine AS builder"
+            echo "RUN echo \"$randomString\" > test.txt"
+            echo "FROM scratch"
+            echo "COPY --from=builder /test.txt ."
+          } > Dockerfile
+
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag ghcr.io/snok/container-retention-policy:test-multi-arch \
+            --push .

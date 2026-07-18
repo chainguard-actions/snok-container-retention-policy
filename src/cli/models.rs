@@ -1,0 +1,116 @@
+use std::sync::LazyLock;
+
+use clap::ValueEnum;
+use regex::Regex;
+use secrecy::{ExposeSecret, SecretString};
+use tracing::debug;
+
+static RE_CLASSIC_PAT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^ghp_[a-zA-Z0-9]{36}$").unwrap());
+static RE_TEMPORAL_LEGACY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^ghs_[a-zA-Z0-9]{36}$").unwrap());
+static RE_TEMPORAL_JWT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^ghs_[0-9]+_[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+$").unwrap());
+
+#[derive(Debug, Clone, ValueEnum, PartialEq)]
+#[clap(rename_all = "snake-case")]
+pub enum Timestamp {
+    UpdatedAt,
+    CreatedAt,
+}
+
+#[derive(Debug, Clone, ValueEnum, PartialEq)]
+pub enum TagSelection {
+    Tagged,
+    Untagged,
+    Both,
+}
+
+/// Represents the different tokens the action can use to authenticate towards the GitHub API.
+///
+/// See <https://github.blog/2021-04-05-behind-githubs-new-authentication-token-formats/>
+/// for a list of existing token types.
+#[derive(Debug, Clone)]
+pub enum Token {
+    ClassicPersonalAccess(SecretString),
+    Temporal(SecretString),
+}
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Self::Temporal(a) => {
+                if let Self::Temporal(b) = other {
+                    a.expose_secret() == b.expose_secret()
+                } else {
+                    false
+                }
+            }
+            Self::ClassicPersonalAccess(a) => {
+                if let Self::ClassicPersonalAccess(b) = other {
+                    a.expose_secret() == b.expose_secret()
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl Token {
+    pub fn try_from_str(value: &str) -> Result<Self, String> {
+        let trimmed_value = value.trim_matches('"'); // Remove surrounding quotes
+        let secret = SecretString::new(Box::from(trimmed_value));
+
+        // Classic PAT
+        if RE_CLASSIC_PAT.is_match(trimmed_value) {
+            debug!("Recognized token as personal access token");
+            return Ok(Self::ClassicPersonalAccess(secret));
+        };
+
+        // Temporal token - i.e., $GITHUB_TOKEN or token acquired for a GitHub app
+        // Supports both the legacy 40-char format (ghs_ + 36 alnum) and the new
+        // JWT-based format (ghs_APPID_JWT, ~520 chars) introduced April 2026.
+        // See: https://github.blog/changelog/2026-04-24-notice-about-upcoming-new-format-for-github-app-installation-tokens/
+        if RE_TEMPORAL_LEGACY.is_match(trimmed_value) || RE_TEMPORAL_JWT.is_match(trimmed_value) {
+            debug!("Recognized token as temporal token");
+            return Ok(Self::Temporal(secret));
+        };
+
+        Err(
+            "The `token` value is not valid. Must be $GITHUB_TOKEN, a classic personal access token (prefixed by 'ghp') or oauth token (prefixed by 'gho').".to_string()
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Account {
+    Organization(String),
+    User,
+}
+
+impl Account {
+    /// Returns the owner name for use in registry API paths.
+    ///
+    /// For organizations, the name is known from the CLI input.
+    /// For personal accounts, we read `GITHUB_REPOSITORY_OWNER` which is
+    /// always set in the GitHub Actions environment.
+    pub fn owner_name(&self) -> Option<String> {
+        match self {
+            Self::Organization(name) => Some(name.clone()),
+            Self::User => std::env::var("GITHUB_REPOSITORY_OWNER").ok(),
+        }
+    }
+
+    pub fn try_from_str(value: &str) -> Result<Self, String> {
+        let value = value.trim();
+        if value == "user" {
+            Ok(Self::User)
+        } else if value.is_empty() {
+            Err(
+                "`account` must be set to 'user' for personal accounts, or to the name of your organization"
+                    .to_string(),
+            )
+        } else {
+            Ok(Self::Organization(value.to_string()))
+        }
+    }
+}

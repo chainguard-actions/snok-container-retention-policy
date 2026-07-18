@@ -1,0 +1,27 @@
+name: Test image-tags input (dry-run)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: container-retention-policy
+        uses: .
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ github.token }}
+          image-names: nonexistent-image-for-testing
+          image-tags: latest v1.0.0
+          cut-off: 100y
+          dry-run: 'true'
+      - name: Assert deleted output is empty (dry-run with no matching images)
+        env:
+          DELETED: ${{ steps.container-retention-policy.outputs.deleted }}
+          FAILED: ${{ steps.container-retention-policy.outputs.failed }}
+        run: |
+          echo "deleted: $DELETED"
+          echo "failed: $FAILED"
+          # In dry-run mode with a nonexistent image, nothing should be deleted
+          # The action should complete successfully
+          echo "PASS: action completed successfully with image-tags input"

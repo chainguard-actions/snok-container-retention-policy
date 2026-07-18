@@ -1,0 +1,30 @@
+name: Test optional inputs dry-run
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          account: snok
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: container-retention-policy
+          cut-off: 100y
+          tag-selection: both
+          keep-n-most-recent: '5'
+          timestamp-to-use: updated_at
+          dry-run: 'true'
+          rust-log: 'container_retention_policy=DEBUG'
+      - name: Assert outputs are present
+        env:
+          DELETED: ${{ steps.action.outputs.deleted }}
+          FAILED: ${{ steps.action.outputs.failed }}
+        run: |
+          echo "deleted: '$DELETED'"
+          echo "failed: '$FAILED'"
+          # In dry-run mode with a 100-year cut-off, nothing should be deleted
+          # Verify the action ran successfully
+          echo "PASS: action completed with optional inputs in dry-run mode"

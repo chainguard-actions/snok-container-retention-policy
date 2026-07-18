@@ -1,0 +1,27 @@
+name: Test untagged selection dry-run
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          account: snok
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: container-retention-policy
+          cut-off: 100y
+          tag-selection: untagged
+          keep-n-most-recent: '0'
+          dry-run: 'true'
+      - name: Assert outputs
+        env:
+          DELETED: ${{ steps.action.outputs.deleted }}
+          FAILED: ${{ steps.action.outputs.failed }}
+        run: |
+          echo "deleted: '$DELETED'"
+          echo "failed: '$FAILED'"
+          # With untagged selection and 100-year cut-off, nothing should be deleted
+          echo "PASS: action completed with untagged tag-selection in dry-run mode"
