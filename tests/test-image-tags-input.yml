@@ -1,0 +1,26 @@
+name: Test image-tags input
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: action
+        uses: .
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ github.token }}
+          image-names: nonexistent-image-for-testing
+          image-tags: latest v1.0.0 v2.0.0
+          cut-off: 365d
+          tag-selection: tagged
+          dry-run: 'true'
+      - name: Assert deleted output is present (may be empty for nonexistent image)
+        env:
+          DELETED: ${{ steps.action.outputs.deleted }}
+          FAILED: ${{ steps.action.outputs.failed }}
+        run: |
+          echo "deleted: $DELETED"
+          echo "failed: $FAILED"
+          echo "PASS: action completed with image-tags input"

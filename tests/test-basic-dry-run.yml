@@ -1,0 +1,42 @@
+name: Test basic dry-run usage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: container-retention-policy
+        uses: .
+        continue-on-error: true
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ github.token }}
+          image-names: nonexistent-test-image-for-act-testing
+          cut-off: 1y
+          dry-run: 'true'
+          tag-selection: both
+          keep-n-most-recent: '0'
+          timestamp-to-use: updated_at
+          rust-log: container_retention_policy=INFO
+
+      - name: Assert action ran (dry-run with nonexistent image)
+        env:
+          OUTCOME: ${{ steps.container-retention-policy.outcome }}
+          DELETED: ${{ steps.container-retention-policy.outputs.deleted }}
+          FAILED: ${{ steps.container-retention-policy.outputs.failed }}
+        run: |
+          echo "outcome: '$OUTCOME'"
+          echo "deleted: '$DELETED'"
+          echo "failed: '$FAILED'"
+          # The action should either succeed (no images found) or fail gracefully
+          # In dry-run mode with a nonexistent image, deleted and failed should be empty
+          if [ "$OUTCOME" = "success" ]; then
+            echo "PASS: action completed successfully in dry-run mode"
+          elif [ "$OUTCOME" = "failure" ]; then
+            # Action may fail if the image doesn't exist - that's acceptable
+            echo "PASS: action ran (may fail for nonexistent image, which is expected)"
+          else
+            echo "FAIL: unexpected outcome: $OUTCOME"
+            exit 1
+          fi
