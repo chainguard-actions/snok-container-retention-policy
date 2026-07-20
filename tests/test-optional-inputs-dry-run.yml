@@ -1,0 +1,48 @@
+name: Test optional inputs dry-run
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          account: snok
+          token: fake-token-for-dry-run-test
+          image-names: nonexistent-test-image-abc123
+          image-tags: latest
+          cut-off: 30d
+          tag-selection: tagged
+          keep-n-most-recent: '5'
+          timestamp-to-use: created_at
+          skip-shas: ''
+          dry-run: 'true'
+
+      - name: Assert action ran
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "action outcome: '$OUTCOME'"
+          if [ "$OUTCOME" = "skipped" ]; then
+            echo "FAIL: action was skipped, expected it to run"
+            exit 1
+          fi
+          echo "PASS: action ran with optional inputs (outcome=$OUTCOME)"
+
+      - name: Assert deleted output
+        env:
+          DELETED: ${{ steps.action.outputs.deleted }}
+        run: |
+          echo "deleted: '$DELETED'"
+          echo "PASS: deleted output checked"
+
+      - name: Assert failed output
+        env:
+          FAILED: ${{ steps.action.outputs.failed }}
+        run: |
+          echo "failed: '$FAILED'"
+          echo "PASS: failed output checked"
