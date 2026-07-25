@@ -1,0 +1,39 @@
+name: Test dry-run with image-tags filter
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - id: container-retention-policy
+        uses: .
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ github.token }}
+          image-names: nonexistent-test-image-xyzzy
+          image-tags: latest
+          cut-off: 100d
+          dry-run: 'true'
+          tag-selection: tagged
+      - name: Assert deleted output is empty (no real images to delete)
+        env:
+          DELETED: ${{ steps.container-retention-policy.outputs.deleted }}
+        run: |
+          echo "deleted: '$DELETED'"
+          # In dry-run mode with a nonexistent image, deleted should be empty
+          if [ -n "$DELETED" ]; then
+            echo "FAIL: expected empty deleted output but got: $DELETED"
+            exit 1
+          fi
+          echo "PASS: deleted output is empty as expected"
+      - name: Assert failed output is empty
+        env:
+          FAILED: ${{ steps.container-retention-policy.outputs.failed }}
+        run: |
+          echo "failed: '$FAILED'"
+          if [ -n "$FAILED" ]; then
+            echo "FAIL: expected empty failed output but got: $FAILED"
+            exit 1
+          fi
+          echo "PASS: failed output is empty as expected"
