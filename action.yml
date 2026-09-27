@@ -50,25 +50,40 @@ inputs:
     description: "The token type. Can be either 'pat' or 'github-token'. If 'github-token', then image-names must the package name of repository from where this action is invoked."
     required: false
     default: 'pat'
-
 outputs:
   needs-github-assistance:
     description: 'Comma-separated list of image names and tags, for image versions that are public and have more than 5000 downloads.'
-    value:  ${{ steps.container-retention-policy.outputs.needs-github-assistance }}
+    value: ${{ steps.container-retention-policy.outputs.needs-github-assistance }}
   deleted:
     description: 'Comma-separated list of image names and tags, for image versions that were deleted during the run.'
-    value:  ${{ steps.container-retention-policy.outputs.deleted }}
+    value: ${{ steps.container-retention-policy.outputs.deleted }}
   failed:
     description: 'Comma-separated list of image names and tags, for image versions that we failed to delete during the run, for an unknown reason.'
-    value:  ${{ steps.container-retention-policy.outputs.failed }}
+    value: ${{ steps.container-retention-policy.outputs.failed }}
 runs:
   using: 'composite'
   steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     - name: Setup Python
-      uses: actions/setup-python@7f4fc3e22c37d6ff65e88745f38bd3157c663f7c # v4
+      uses: chainguard-actions/actions-setup-python@8d57ecf645562740357c72731d1ef2ae6f1ef2e7 # v4
       with:
         python-version: "3.11"
-
     - name: Install dependencies
       shell: bash
       run: |
@@ -77,12 +92,11 @@ runs:
           httpx \
           dateparser \
           pydantic
-
     - name: Run Container Retention Policy
       shell: bash
       id: container-retention-policy
       run: |
-        python "$ACTION_PATH/main.py" \
+        python "$GITHUB_ACTION_PATH/main.py" \
           "$ACCOUNT_TYPE" \
           "$ORG_NAME" \
           "$IMAGE_NAMES" \
@@ -97,17 +111,16 @@ runs:
           "$DRY_RUN" \
           "$TOKEN_TYPE"
       env:
-          ACTION_PATH: "${{ github.action_path }}"
-          ACCOUNT_TYPE: "${{ inputs.account-type }}"
-          ORG_NAME: "${{ inputs.org-name }}"
-          IMAGE_NAMES: "${{ inputs.image-names }}"
-          TIMESTAMP_TO_USE: "${{ inputs.timestamp-to-use }}"
-          CUT_OFF: "${{ inputs.cut-off }}"
-          TOKEN: "${{ inputs.token }}"
-          UNTAGGED_ONLY: "${{ inputs.untagged-only }}"
-          SKIP_TAGS: "${{ inputs.skip-tags }}"
-          KEEP_AT_LEAST: "${{ inputs.keep-at-least }}"
-          FILTER_TAGS: "${{ inputs.filter-tags }}"
-          FILTER_INCLUDE_UNTAGGED: "${{ inputs.filter-include-untagged }}"
-          DRY_RUN: "${{ inputs.dry-run }}"
-          TOKEN_TYPE: "${{ inputs.token-type }}"
+        ACCOUNT_TYPE: "${{ inputs.account-type }}"
+        ORG_NAME: "${{ inputs.org-name }}"
+        IMAGE_NAMES: "${{ inputs.image-names }}"
+        TIMESTAMP_TO_USE: "${{ inputs.timestamp-to-use }}"
+        CUT_OFF: "${{ inputs.cut-off }}"
+        TOKEN: "${{ inputs.token }}"
+        UNTAGGED_ONLY: "${{ inputs.untagged-only }}"
+        SKIP_TAGS: "${{ inputs.skip-tags }}"
+        KEEP_AT_LEAST: "${{ inputs.keep-at-least }}"
+        FILTER_TAGS: "${{ inputs.filter-tags }}"
+        FILTER_INCLUDE_UNTAGGED: "${{ inputs.filter-include-untagged }}"
+        DRY_RUN: "${{ inputs.dry-run }}"
+        TOKEN_TYPE: "${{ inputs.token-type }}"
